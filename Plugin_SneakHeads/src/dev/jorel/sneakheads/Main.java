@@ -117,7 +117,7 @@ public class Main extends JavaPlugin implements Listener {
 				block.setType(Material.AIR);
 				if(playerItemFrames.containsKey(player.getUniqueId())) {
 					Bukkit.getEntity(playerItemFrames.get(player.getUniqueId())).remove();
-					playerItemFrames.remove(playerItemFrames.get(player.getUniqueId()));
+					playerItemFrames.remove(player.getUniqueId());
 					player.setGameMode(GameMode.SURVIVAL);
 					player.setFlySpeed(0.1f);
 				}
