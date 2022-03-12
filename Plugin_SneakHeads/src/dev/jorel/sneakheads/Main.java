@@ -29,11 +29,13 @@ public class Main extends JavaPlugin implements Listener {
 	
 	// Maps players to itemframe entities
 	private Map<UUID, UUID> playerItemFrames;
+	private Map<UUID, GameMode> playerGamemodes;
 	
 	@Override
 	public void onEnable() {
 		getServer().getPluginManager().registerEvents(this, this);
 		playerItemFrames = new HashMap<>();
+		playerGamemodes = new HashMap<>();
 	}
 	
 	@Override
@@ -67,21 +69,25 @@ public class Main extends JavaPlugin implements Listener {
 		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
 			ItemFrame itemFrame = ((ItemFrame) Bukkit.getEntity(playerItemFrames.get(event.getPlayer().getUniqueId())));
 			if(itemFrame != null) {
-				float newYaw = event.getPlayer().getLocation().getYaw();				
-				Rotation newRotation = Rotation.NONE;
-				if((newYaw < 180 && newYaw >= 135) || (newYaw < -135 && newYaw >= -180)) {
-					newRotation = Rotation.CLOCKWISE;
-				} else if(newYaw >= -135 && newYaw < -45) {
-					newRotation = Rotation.FLIPPED;
-				} else if(newYaw >= -45 && newYaw < 45) {
-					newRotation = Rotation.COUNTER_CLOCKWISE;
-				} else if(newYaw >= 45 && newYaw < 135) {
-					newRotation = Rotation.NONE;
-				}
-				
-				itemFrame.setRotation(newRotation);
+				setRotation(itemFrame, event.getPlayer());
 			}
 		}
+	}
+	
+	private void setRotation(ItemFrame itemFrame, Player player) {
+		float newYaw = player.getLocation().getYaw();
+		Rotation newRotation = Rotation.NONE;
+		if((newYaw < 180 && newYaw >= 135) || (newYaw < -135 && newYaw >= -180)) {
+			newRotation = Rotation.CLOCKWISE;
+		} else if(newYaw >= -135 && newYaw < -45) {
+			newRotation = Rotation.FLIPPED;
+		} else if(newYaw >= -45 && newYaw < 45) {
+			newRotation = Rotation.COUNTER_CLOCKWISE;
+		} else if(newYaw >= 45 && newYaw < 135) {
+			newRotation = Rotation.NONE;
+		}
+		
+		itemFrame.setRotation(newRotation);
 	}
 	
 	@EventHandler
@@ -95,22 +101,26 @@ public class Main extends JavaPlugin implements Listener {
 				SkullMeta meta = (SkullMeta) is.getItemMeta();
 				meta.setOwningPlayer(player);
 				is.setItemMeta(meta);
+
+				Location newLocation = block.getLocation();
+				newLocation = newLocation.add(0.5, 0.1, 0.5);
 				
-				ItemFrame frame = player.getWorld().spawn(player.getLocation().getBlock().getLocation(), ItemFrame.class);
-				frame.setFacingDirection(BlockFace.UP);
-				frame.setItem(is);
-				frame.setVisible(false);
+				ItemFrame frame = player.getWorld().spawn(newLocation, ItemFrame.class, iFrame -> {
+					iFrame.setFacingDirection(BlockFace.UP, true);
+					iFrame.setItem(is);
+					iFrame.setVisible(false);
+					setRotation(iFrame, player);
+				});
+				
+				newLocation = newLocation.setDirection(player.getLocation().getDirection());
+				player.teleport(newLocation);
 				
 				playerItemFrames.put(player.getUniqueId(), frame.getUniqueId());
+				playerGamemodes.put(player.getUniqueId(), player.getGameMode());
 				player.setGameMode(GameMode.SPECTATOR);
 				block.setType(Material.BARRIER); 
 				player.setFlySpeed(0);
 				player.setSneaking(false);
-				
-				Location newLocation = block.getLocation();
-				newLocation = newLocation.add(0.5, 0.1, 0.5);
-				newLocation = newLocation.setDirection(player.getLocation().getDirection());
-				player.teleport(newLocation);
 			}
 		} else {
 			if(block.getType() == Material.BARRIER || player.getGameMode() == GameMode.SPECTATOR) {
@@ -118,7 +128,7 @@ public class Main extends JavaPlugin implements Listener {
 				if(playerItemFrames.containsKey(player.getUniqueId())) {
 					Bukkit.getEntity(playerItemFrames.get(player.getUniqueId())).remove();
 					playerItemFrames.remove(player.getUniqueId());
-					player.setGameMode(GameMode.SURVIVAL);
+					player.setGameMode(playerGamemodes.get(player.getUniqueId()));
 					player.setFlySpeed(0.1f);
 				}
 			}
