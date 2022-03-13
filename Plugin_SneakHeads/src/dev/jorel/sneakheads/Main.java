@@ -26,10 +26,9 @@ import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class Main extends JavaPlugin implements Listener {
-	
-	// Maps players to itemframe entities
-	private Map<UUID, UUID> playerItemFrames;
-	private Map<UUID, GameMode> playerGamemodes;
+
+	private Map<UUID, UUID> playerItemFrames; // Maps players to itemframe entities
+	private Map<UUID, GameMode> playerGamemodes; // Maps players to their gamemodes
 	
 	@Override
 	public void onEnable() {
@@ -40,14 +39,22 @@ public class Main extends JavaPlugin implements Listener {
 	
 	@Override
 	public void onDisable() {
+		// Remove all existing heads
 		for(UUID uuid : playerItemFrames.values()) {
 			Entity entity = Bukkit.getEntity(uuid);
 			if(entity != null) {
+				entity.getLocation().getBlock().setType(Material.AIR);
 				entity.remove();
 			}
 		}
 	}
 	
+	/**
+	 * Prevent transformed players moving while in spectator mode due to scrolling.
+	 * If a player is transformed, they can't move (flight speed is set to 0), but
+	 * we need to prevent them from changing their speed (using the scroll wheel) to
+	 * prevent them from "floating down".
+	 */
 	@EventHandler
 	public void spectatorPlayerMoveEvent(PlayerMoveEvent event) {
 		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
@@ -58,15 +65,21 @@ public class Main extends JavaPlugin implements Listener {
 		}
 	}
 	
+	/**
+	 * Prevent item frames breaking because barriers are on top of them
+	 */
 	@EventHandler
 	public void onItemFrameBreak(HangingBreakEvent event) {
-		if(event.getCause() == RemoveCause.OBSTRUCTION) {
-			if(event.getEntity().getLocation().getBlock().getType() == Material.BARRIER) {
-				event.setCancelled(true);
-			}
+		if(event.getCause() == RemoveCause.OBSTRUCTION && event.getEntity().getLocation().getBlock().getType() == Material.BARRIER) {
+			event.setCancelled(true);
 		}
 	}
 	
+	/**
+	 * Prevent transformed players interacting with stuff. When a player is
+	 * transformed, they are in spectator which can allow them to spectate other
+	 * entities or players (and thus, skew their location)
+	 */
 	@EventHandler
 	public void onSpectatePlayer(PlayerInteractEvent event) {
 		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
@@ -74,6 +87,9 @@ public class Main extends JavaPlugin implements Listener {
 		}
 	}
 	
+	/**
+	 * Rotate a player's block head when the player rotates
+	 */
 	@EventHandler
 	public void onPlayerRotate(PlayerMoveEvent event) {
 		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
@@ -84,6 +100,11 @@ public class Main extends JavaPlugin implements Listener {
 		}
 	}
 	
+	/**
+	 * Sets the rotation for an item frame based on a player's rotation
+	 * @param itemFrame the item frame to rotate
+	 * @param player the player's rotation to use to rotate the itemframe
+	 */
 	private void setRotation(ItemFrame itemFrame, Player player) {
 		float newYaw = player.getLocation().getYaw();
 		Rotation newRotation = Rotation.NONE;
@@ -100,30 +121,51 @@ public class Main extends JavaPlugin implements Listener {
 		itemFrame.setRotation(newRotation);
 	}
 	
+	/**
+	 * Toggle a player's transformed state. If they sneak, they turn into a block.
+	 * If they stop sneaking, they revert back to normal.
+	 */
 	@EventHandler
 	public void onSneak(PlayerToggleSneakEvent event) {
 		Player player = event.getPlayer();
 		Block block = event.getPlayer().getLocation().getBlock();
 		
 		if(event.isSneaking()) {
-			if(block.getType() == Material.HONEY_BLOCK || block.getType() == Material.DIRT_PATH || block.getType() == Material.SOUL_SAND) {
-				block = block.getRelative(BlockFace.UP);
+			// Blocks which are not full height when standing on them need to
+			// reference the block above them
+			switch(block.getType()) {
+				case HONEY_BLOCK:
+				case DIRT_PATH:
+				case SOUL_SAND:
+					block = block.getRelative(BlockFace.UP);
+					break;
+				default: break;
 			}
+			
+			// The block the player is currently at must be suitable to be replaced
+			// with their "block head". We also allow water and lava for fun fluid
+			// puzzles
 			boolean isSuitableBlock = switch(block.getType()) {
-				case AIR -> true;
-				case WATER -> true;
-				case LAVA -> true;
+				case AIR, WATER, LAVA -> true;
 				default -> false;
 			};
+			
 			if(isSuitableBlock && block.getRelative(BlockFace.DOWN).getType().isSolid()) {
+				// Create the player's head itemstack
 				ItemStack is = new ItemStack(Material.PLAYER_HEAD);
 				SkullMeta meta = (SkullMeta) is.getItemMeta();
 				meta.setOwningPlayer(player);
 				is.setItemMeta(meta);
 
+				// Tweak the location to be the centre of the block (raised a bit)
 				Location newLocation = block.getLocation();
 				newLocation = newLocation.add(0.5, 0.1, 0.5);
 				
+				// Spawn the item frame. We use the consumer method to also set up
+				// the item frame before spawning it in (setting its direction, item,
+				// rotation and visibility). If we don't do this here, the item frame
+				// can be assigned to the wrong block and effectively "teleported" to
+				// a completely unexpected location
 				ItemFrame frame = player.getWorld().spawn(newLocation, ItemFrame.class, iFrame -> {
 					iFrame.setFacingDirection(BlockFace.UP, true);
 					iFrame.setItem(is);
@@ -131,11 +173,16 @@ public class Main extends JavaPlugin implements Listener {
 					setRotation(iFrame, player);
 				});
 				
+				// Teleport the player to the centre of the block (and set their
+				// direction so their direction isn't reset)
 				newLocation = newLocation.setDirection(player.getLocation().getDirection());
 				player.teleport(newLocation);
 				
+				// Store the player's game state
 				playerItemFrames.put(player.getUniqueId(), frame.getUniqueId());
 				playerGamemodes.put(player.getUniqueId(), player.getGameMode());
+				
+				// Set the player's new state
 				player.setGameMode(GameMode.SPECTATOR);
 				block.setType(Material.BARRIER); 
 				player.setFlySpeed(0);
@@ -145,6 +192,7 @@ public class Main extends JavaPlugin implements Listener {
 			if(block.getType() == Material.BARRIER || player.getGameMode() == GameMode.SPECTATOR) {
 				block.setType(Material.AIR);
 				if(playerItemFrames.containsKey(player.getUniqueId())) {
+					// Remove the item, reset the player's state
 					Bukkit.getEntity(playerItemFrames.get(player.getUniqueId())).remove();
 					playerItemFrames.remove(player.getUniqueId());
 					player.setGameMode(playerGamemodes.get(player.getUniqueId()));
