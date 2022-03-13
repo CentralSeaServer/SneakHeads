@@ -14,6 +14,10 @@ Transforming counts as a solid block:
 
 ![Transforming counts as a solid block. Redstone signals can pass through you](./transform_redstone.gif)
 
+Rotating when transformed rotates your head:
+
+![Rotating while transformed as a block rotates the block in the cardinal direction that you're looking at](./transform_rotating.gif)
+
 ## Installation
 
 - Install the resourcepack `SneakHeadsPack.zip` (download it and place it in your resourcepacks folder)
