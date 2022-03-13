@@ -49,6 +49,16 @@ public class Main extends JavaPlugin implements Listener {
 	}
 	
 	@EventHandler
+	public void spectatorPlayerMoveEvent(PlayerMoveEvent event) {
+		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
+			if(!event.getFrom().toVector().equals(event.getTo().toVector())) {
+				event.setCancelled(true);
+				event.getPlayer().setFlySpeed(0);
+			}
+		}
+	}
+	
+	@EventHandler
 	public void onItemFrameBreak(HangingBreakEvent event) {
 		if(event.getCause() == RemoveCause.OBSTRUCTION) {
 			if(event.getEntity().getLocation().getBlock().getType() == Material.BARRIER) {
