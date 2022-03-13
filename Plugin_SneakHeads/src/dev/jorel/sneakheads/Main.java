@@ -96,7 +96,16 @@ public class Main extends JavaPlugin implements Listener {
 		Block block = event.getPlayer().getLocation().getBlock();
 		
 		if(event.isSneaking()) {
-			if(block.getType() == Material.AIR && block.getRelative(BlockFace.DOWN).getType() != Material.AIR) {
+			if(block.getType() == Material.HONEY_BLOCK || block.getType() == Material.DIRT_PATH || block.getType() == Material.SOUL_SAND) {
+				block = block.getRelative(BlockFace.UP);
+			}
+			boolean isSuitableBlock = switch(block.getType()) {
+				case AIR -> true;
+				case WATER -> true;
+				case LAVA -> true;
+				default -> false;
+			};
+			if(isSuitableBlock && block.getRelative(BlockFace.DOWN).getType().isSolid()) {
 				ItemStack is = new ItemStack(Material.PLAYER_HEAD);
 				SkullMeta meta = (SkullMeta) is.getItemMeta();
 				meta.setOwningPlayer(player);
@@ -130,6 +139,7 @@ public class Main extends JavaPlugin implements Listener {
 					playerItemFrames.remove(player.getUniqueId());
 					player.setGameMode(playerGamemodes.get(player.getUniqueId()));
 					player.setFlySpeed(0.1f);
+					player.setFlying(false);
 				}
 			}
 		}
