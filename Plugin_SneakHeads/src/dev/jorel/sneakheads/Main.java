@@ -146,7 +146,7 @@ public class Main extends JavaPlugin implements Listener {
 			// with their "block head". We also allow water and lava for fun fluid
 			// puzzles
 			boolean isSuitableBlock = switch(block.getType()) {
-				case AIR, WATER, LAVA -> true;
+				case AIR, WATER, LAVA, FIRE -> true;
 				default -> false;
 			};
 			
