@@ -11,6 +11,9 @@ import org.bukkit.Material;
 import org.bukkit.Rotation;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
@@ -29,12 +32,26 @@ public class Main extends JavaPlugin implements Listener {
 
 	private Map<UUID, UUID> playerItemFrames; // Maps players to itemframe entities
 	private Map<UUID, GameMode> playerGamemodes; // Maps players to their gamemodes
+	private boolean enabled = false;
 	
 	@Override
 	public void onEnable() {
 		getServer().getPluginManager().registerEvents(this, this);
 		playerItemFrames = new HashMap<>();
 		playerGamemodes = new HashMap<>();
+		enabled = false;
+	}
+	
+	@Override
+	public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+		if(label.equalsIgnoreCase("sneakheads")) {
+			if(sender.isOp() || sender instanceof ConsoleCommandSender) {
+				enabled = !enabled;
+				sender.sendMessage("[SneakHeads] Enabled status changed to: " + enabled);
+			}
+			return true;
+		}
+		return false;
 	}
 	
 	@Override
@@ -47,6 +64,7 @@ public class Main extends JavaPlugin implements Listener {
 				entity.remove();
 			}
 		}
+		enabled = false;
 	}
 	
 	/**
@@ -57,10 +75,12 @@ public class Main extends JavaPlugin implements Listener {
 	 */
 	@EventHandler
 	public void spectatorPlayerMoveEvent(PlayerMoveEvent event) {
-		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
-			if(!event.getFrom().toVector().equals(event.getTo().toVector())) {
-				event.setCancelled(true);
-				event.getPlayer().setFlySpeed(0);
+		if(enabled) {
+			if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
+				if(!event.getFrom().toVector().equals(event.getTo().toVector())) {
+					event.setCancelled(true);
+					event.getPlayer().setFlySpeed(0);
+				}
 			}
 		}
 	}
@@ -82,8 +102,10 @@ public class Main extends JavaPlugin implements Listener {
 	 */
 	@EventHandler
 	public void onSpectatePlayer(PlayerInteractEvent event) {
-		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
-			event.setCancelled(true);
+		if(enabled) {
+			if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
+				event.setCancelled(true);
+			}
 		}
 	}
 	
@@ -92,10 +114,12 @@ public class Main extends JavaPlugin implements Listener {
 	 */
 	@EventHandler
 	public void onPlayerRotate(PlayerMoveEvent event) {
-		if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
-			ItemFrame itemFrame = ((ItemFrame) Bukkit.getEntity(playerItemFrames.get(event.getPlayer().getUniqueId())));
-			if(itemFrame != null) {
-				setRotation(itemFrame, event.getPlayer());
+		if(enabled) {
+			if(playerItemFrames.containsKey(event.getPlayer().getUniqueId())) {
+				ItemFrame itemFrame = ((ItemFrame) Bukkit.getEntity(playerItemFrames.get(event.getPlayer().getUniqueId())));
+				if(itemFrame != null) {
+					setRotation(itemFrame, event.getPlayer());
+				}
 			}
 		}
 	}
@@ -127,77 +151,81 @@ public class Main extends JavaPlugin implements Listener {
 	 */
 	@EventHandler
 	public void onSneak(PlayerToggleSneakEvent event) {
-		Player player = event.getPlayer();
-		Block block = event.getPlayer().getLocation().getBlock();
-		
-		if(event.isSneaking()) {
-			// Blocks which are not full height when standing on them need to
-			// reference the block above them
-			switch(block.getType()) {
-				case HONEY_BLOCK:
-				case DIRT_PATH:
-				case SOUL_SAND:
-					block = block.getRelative(BlockFace.UP);
-					break;
-				default: break;
-			}
+		if(enabled) {
+			Player player = event.getPlayer();
+			Block block = event.getPlayer().getLocation().getBlock();
 			
-			// The block the player is currently at must be suitable to be replaced
-			// with their "block head". We also allow water and lava for fun fluid
-			// puzzles
-			boolean isSuitableBlock = switch(block.getType()) {
-				case AIR, WATER, LAVA, FIRE -> true;
-				default -> false;
-			};
-			
-			if(isSuitableBlock && block.getRelative(BlockFace.DOWN).getType().isSolid()) {
-				// Create the player's head itemstack
-				ItemStack is = new ItemStack(Material.PLAYER_HEAD);
-				SkullMeta meta = (SkullMeta) is.getItemMeta();
-				meta.setOwningPlayer(player);
-				is.setItemMeta(meta);
-
-				// Tweak the location to be the centre of the block (raised a bit)
-				Location newLocation = block.getLocation();
-				newLocation = newLocation.add(0.5, 0.1, 0.5);
+			if(event.isSneaking()) {
+				// Blocks which are not full height when standing on them need to
+				// reference the block above them
+				switch(block.getType()) {
+					case HONEY_BLOCK:
+					case DIRT_PATH:
+					case SOUL_SAND:
+						block = block.getRelative(BlockFace.UP);
+						break;
+					default: break;
+				}
 				
-				// Spawn the item frame. We use the consumer method to also set up
-				// the item frame before spawning it in (setting its direction, item,
-				// rotation and visibility). If we don't do this here, the item frame
-				// can be assigned to the wrong block and effectively "teleported" to
-				// a completely unexpected location
-				ItemFrame frame = player.getWorld().spawn(newLocation, ItemFrame.class, iFrame -> {
-					iFrame.setFacingDirection(BlockFace.UP, true);
-					iFrame.setItem(is);
-					iFrame.setVisible(false);
-					setRotation(iFrame, player);
-				});
+				// The block the player is currently at must be suitable to be replaced
+				// with their "block head". We also allow water and lava for fun fluid
+				// puzzles
+				boolean isSuitableBlock = switch(block.getType()) {
+					case AIR, WATER, LAVA, FIRE -> true;
+					default -> false;
+				};
 				
-				// Teleport the player to the centre of the block (and set their
-				// direction so their direction isn't reset)
-				newLocation = newLocation.setDirection(player.getLocation().getDirection());
-				player.teleport(newLocation);
-				
-				// Store the player's game state
-				playerItemFrames.put(player.getUniqueId(), frame.getUniqueId());
-				playerGamemodes.put(player.getUniqueId(), player.getGameMode());
-				
-				// Set the player's new state
-				player.setGameMode(GameMode.SPECTATOR);
-				block.setType(Material.BARRIER); 
-				player.setFlySpeed(0);
-				player.setSneaking(false);
-			}
-		} else {
-			if(block.getType() == Material.BARRIER || player.getGameMode() == GameMode.SPECTATOR) {
-				block.setType(Material.AIR);
-				if(playerItemFrames.containsKey(player.getUniqueId())) {
-					// Remove the item, reset the player's state
-					Bukkit.getEntity(playerItemFrames.get(player.getUniqueId())).remove();
-					playerItemFrames.remove(player.getUniqueId());
-					player.setGameMode(playerGamemodes.get(player.getUniqueId()));
-					player.setFlySpeed(0.1f);
-					player.setFlying(false);
+				if(isSuitableBlock && block.getRelative(BlockFace.DOWN).getType().isSolid()) {
+					// Create the player's head itemstack
+					ItemStack is = new ItemStack(Material.PLAYER_HEAD);
+					SkullMeta meta = (SkullMeta) is.getItemMeta();
+					meta.setOwningPlayer(player);
+					is.setItemMeta(meta);
+	
+					// Tweak the location to be the centre of the block (raised a bit)
+					Location newLocation = block.getLocation();
+					newLocation = newLocation.add(0.5, 0.1, 0.5);
+					
+					// Spawn the item frame. We use the consumer method to also set up
+					// the item frame before spawning it in (setting its direction, item,
+					// rotation and visibility). If we don't do this here, the item frame
+					// can be assigned to the wrong block and effectively "teleported" to
+					// a completely unexpected location
+					ItemFrame frame = player.getWorld().spawn(newLocation, ItemFrame.class, iFrame -> {
+						iFrame.setFacingDirection(BlockFace.UP, true);
+						iFrame.setItem(is);
+						iFrame.setVisible(false);
+						iFrame.setInvulnerable(true);
+						iFrame.setGravity(false);
+						setRotation(iFrame, player);
+					});
+					
+					// Teleport the player to the centre of the block (and set their
+					// direction so their direction isn't reset)
+					newLocation = newLocation.setDirection(player.getLocation().getDirection());
+					player.teleport(newLocation);
+					
+					// Store the player's game state
+					playerItemFrames.put(player.getUniqueId(), frame.getUniqueId());
+					playerGamemodes.put(player.getUniqueId(), player.getGameMode());
+					
+					// Set the player's new state
+					player.setGameMode(GameMode.SPECTATOR);
+					block.setType(Material.BARRIER); 
+					player.setFlySpeed(0);
+					player.setSneaking(false);
+				}
+			} else {
+				if(block.getType() == Material.BARRIER || player.getGameMode() == GameMode.SPECTATOR) {
+					block.setType(Material.AIR);
+					if(playerItemFrames.containsKey(player.getUniqueId())) {
+						// Remove the item, reset the player's state
+						Bukkit.getEntity(playerItemFrames.get(player.getUniqueId())).remove();
+						playerItemFrames.remove(player.getUniqueId());
+						player.setGameMode(playerGamemodes.get(player.getUniqueId()));
+						player.setFlySpeed(0.1f);
+						player.setFlying(false);
+					}
 				}
 			}
 		}
