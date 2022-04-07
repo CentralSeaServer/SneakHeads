@@ -29,10 +29,14 @@ import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class Main extends JavaPlugin implements Listener {
+	
+	private static final long COOLDOWN_IN_TICKS = 5L;
 
 	private Map<UUID, UUID> playerItemFrames; // Maps players to itemframe entities
 	private Map<UUID, GameMode> playerGamemodes; // Maps players to their gamemodes
 	private boolean enabled = false;
+	private Map<UUID, Boolean> playerOnCooldown; // Maps players to whether they are on cooldown (true = on cooldown)
+	// If a player is on cooldown, they CANNOT turn back into a person until the cooldown is over
 	
 	@Override
 	public void onEnable() {
@@ -40,6 +44,7 @@ public class Main extends JavaPlugin implements Listener {
 		playerItemFrames = new HashMap<>();
 		playerGamemodes = new HashMap<>();
 		enabled = false;
+		playerOnCooldown = new HashMap<>();
 	}
 	
 	@Override
@@ -158,14 +163,27 @@ public class Main extends JavaPlugin implements Listener {
 			if(event.isSneaking()) {
 				// Blocks which are not full height when standing on them need to
 				// reference the block above them
-				switch(block.getType()) {
+				boolean isSpecial = switch(block.getRelative(BlockFace.DOWN).getType()) {
+					case AZALEA, FLOWERING_AZALEA, SCAFFOLDING, POWDER_SNOW, BIG_DRIPLEAF -> true;
+					default -> false;
+				};
+				
+				block = switch(block.getType()) {
 					case HONEY_BLOCK:
 					case DIRT_PATH:
 					case SOUL_SAND:
-						block = block.getRelative(BlockFace.UP);
-						break;
-					default: break;
-				}
+					case FARMLAND:
+					case CACTUS:
+					case CHEST:
+					case ENDER_CHEST:
+					case TRAPPED_CHEST:
+						yield block.getRelative(BlockFace.UP);
+					case BIG_DRIPLEAF:
+						isSpecial = true;
+						yield block.getRelative(BlockFace.UP);
+					default: 
+						yield block;
+				};
 				
 				// The block the player is currently at must be suitable to be replaced
 				// with their "block head". We also allow water and lava for fun fluid
@@ -175,7 +193,7 @@ public class Main extends JavaPlugin implements Listener {
 					default -> false;
 				};
 				
-				if(isSuitableBlock && block.getRelative(BlockFace.DOWN).getType().isSolid()) {
+				if(isSuitableBlock && (block.getRelative(BlockFace.DOWN).getType().isSolid() || isSpecial)) {
 					// Create the player's head itemstack
 					ItemStack is = new ItemStack(Material.PLAYER_HEAD);
 					SkullMeta meta = (SkullMeta) is.getItemMeta();
@@ -214,9 +232,21 @@ public class Main extends JavaPlugin implements Listener {
 					block.setType(Material.BARRIER); 
 					player.setFlySpeed(0);
 					player.setSneaking(false);
+
+					playerOnCooldown.put(player.getUniqueId(), true);
+					Bukkit.getScheduler().scheduleSyncDelayedTask(this, () -> {
+						playerOnCooldown.put(player.getUniqueId(), false);
+					}, COOLDOWN_IN_TICKS);
 				}
 			} else {
 				if(block.getType() == Material.BARRIER || player.getGameMode() == GameMode.SPECTATOR) {
+
+					if(playerOnCooldown.get(player.getUniqueId())) {
+						player.setSneaking(true);
+						event.setCancelled(true);
+						return;
+					}
+					
 					block.setType(Material.AIR);
 					if(playerItemFrames.containsKey(player.getUniqueId())) {
 						// Remove the item, reset the player's state
